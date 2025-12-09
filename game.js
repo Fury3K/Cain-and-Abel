@@ -1,25 +1,67 @@
 // Cain and Abel - A Journey of Unity
-// A cooperative puzzle platformer game
+// Remastered Version - Final Stable Build
+
+class Particle {
+    constructor(x, y, color, type) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.type = type;
+        this.size = Math.random() * 3 + 1;
+        this.life = 1.0;
+        this.decay = Math.random() * 0.03 + 0.01;
+        
+        if (type === 'dust') {
+            this.vx = (Math.random() - 0.5) * 2;
+            this.vy = (Math.random() - 1) * 2;
+        } else if (type === 'sparkle') {
+            this.vx = (Math.random() - 0.5) * 1;
+            this.vy = (Math.random() - 0.5) * 1;
+            this.decay = 0.02;
+        } else if (type === 'debris') {
+            this.vx = (Math.random() - 0.5) * 4;
+            this.vy = (Math.random() - 1) * 4;
+            this.size = Math.random() * 5 + 2;
+        }
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= this.decay;
+        if (this.type === 'debris') this.vy += 0.2;
+    }
+
+    draw(ctx) {
+        ctx.save();
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+        ctx.restore();
+    }
+}
 
 class Game {
     constructor() {
+        console.log("Initializing Game...");
         this.canvas = document.getElementById('game');
         this.ctx = this.canvas.getContext('2d');
         this.width = this.canvas.width;
         this.height = this.canvas.height;
         
-        // Game state - Updated for separate offerings
+        document.getElementById('gameHUD').classList.remove('hidden');
+
         this.currentLevel = 1;
         this.currentCharacter = 'cain';
-        this.gameState = 'playing'; // playing, paused, levelComplete, gameComplete
+        this.gameState = 'playing';
         this.cainOfferings = 0;
         this.abelOfferings = 0;
-        this.maxCainOfferings = 3;
-        this.maxAbelOfferings = 3;
-        this.exitGate = null;
-        this.exitGateSpawned = false;
+        this.maxCainOfferings = 1;
+        this.maxAbelOfferings = 1;
         
-        // Game objects
+        this.particles = [];
+        this.shakeIntensity = 0;
+        
         this.characters = {};
         this.platforms = [];
         this.movableObjects = [];
@@ -28,31 +70,25 @@ class Game {
         this.earthPlatforms = [];
         this.illuminatedAreas = [];
         this.collectibles = [];
-        this.hiddenCollectibles = []; // New: hidden offerings revealed by illumination
-        this.finishArea = null;
-        this.gateBarriers = []; // New: barriers protecting the gate
-        this.bridges = []; // Bridge system for connecting islands
-        this.exitGateSpawned = false; // Reset gate spawn status
+        this.hiddenCollectibles = [];
+        this.gateBarriers = [];
+        this.bridges = [];
+        this.exitGate = null;
+        this.exitGateSpawned = false;
         
-        // Physics
         this.gravity = 0.5;
         this.friction = 0.85;
+        this.darkness = 0.85;
         
-        // Audio
         this.heartacheMusic = new Audio('Heartache.mp3');
-        this.heartacheMusic.volume = 0.8; // Lower volume by 20%
+        this.heartacheMusic.volume = 0.6;
         this.ominousBellsMusic = new Audio('Ominous Bells of Doom.mp3');
         this.currentMusic = null;
         
-        // Darkness/visibility system
-        this.darkness = 0.85; // How dark the environment is (0 = bright, 1 = completely dark)
-        
-        // Input handling
         this.keys = {};
-        this.keysPressed = {}; // Track key press events
+        this.keysPressed = {};
         this.setupEventListeners();
         
-        // Initialize game
         this.initializeCharacters();
         this.loadLevel(this.currentLevel);
         this.gameLoop();
@@ -60,9 +96,7 @@ class Game {
     
     setupEventListeners() {
         document.addEventListener('keydown', (e) => {
-            if (!this.keys[e.code]) {
-                this.keysPressed[e.code] = true;
-            }
+            if (!this.keys[e.code]) this.keysPressed[e.code] = true;
             this.keys[e.code] = true;
             this.handleKeyPress(e);
         });
@@ -75,70 +109,43 @@ class Game {
     
     handleKeyPress(e) {
         switch(e.code) {
-            case 'KeyP':
-                this.togglePause();
-                break;
-            case 'KeyR':
-                if (e.ctrlKey) {
-                    this.restartLevel();
-                }
-                break;
-            case 'Digit1':
-                this.switchCharacter('cain');
-                break;
-            case 'Digit2':
-                this.switchCharacter('abel');
-                break;
+            case 'KeyP': this.togglePause(); break;
+            case 'KeyR': if (e.ctrlKey) this.restartLevel(); break;
+            case 'Digit1': this.switchCharacter('cain'); break;
+            case 'Digit2': this.switchCharacter('abel'); break;
         }
     }
     
+    createParticles(x, y, type, count = 10, color = '#fff') {
+        for (let i = 0; i < count; i++) {
+            this.particles.push(new Particle(x, y, color, type));
+        }
+    }
+    
+    addScreenShake(intensity) {
+        this.shakeIntensity = intensity;
+    }
+
     initializeCharacters() {
-        // Cain - Earth-Bound character
         this.characters.cain = {
-            x: 100,
-            y: 400,
-            width: 30,
-            height: 40,
-            vx: 0,
-            vy: 0,
-            onGround: false,
-            color: '#8B4513', // Brown
-            abilities: {
-                canPush: true,
-                canCreatePlatform: true,
-                canBreakBarrier: true
-            },
-            pushPower: 3,
-            platformCooldown: 0,
-            breakCooldown: 0,
-            offerings: 0
+            x: 100, y: 400, width: 30, height: 40,
+            vx: 0, vy: 0, onGround: false,
+            color: '#8B4513',
+            abilities: { canPush: true, canCreatePlatform: true, canBreakBarrier: true },
+            pushPower: 3, platformCooldown: 0, breakCooldown: 0, offerings: 0
         };
         
-        // Abel - Sky-Tender character
         this.characters.abel = {
-            x: 150,
-            y: 400,
-            width: 25,
-            height: 35,
-            vx: 0,
-            vy: 0,
-            onGround: false,
-            color: '#87CEEB', // Sky blue
-            abilities: {
-                canDoubleJump: true,
-                canGlide: true,
-                canIlluminate: true
-            },
-            jumpCount: 0,
-            maxJumps: 2,
-            illuminationCooldown: 0,
-            illuminationRadius: 600,
-            offerings: 0
+            x: 150, y: 400, width: 25, height: 35,
+            vx: 0, vy: 0, onGround: false,
+            color: '#87CEEB',
+            abilities: { canDoubleJump: true, canGlide: true, canIlluminate: true },
+            jumpCount: 0, maxJumps: 2, illuminationCooldown: 0, illuminationRadius: 600, offerings: 0
         };
     }
     
     loadLevel(level) {
-        // Clear existing level objects
+        console.log("Loading Level:", level);
         this.platforms = [];
         this.movableObjects = [];
         this.switches = [];
@@ -147,482 +154,160 @@ class Game {
         this.illuminatedAreas = [];
         this.collectibles = [];
         this.hiddenCollectibles = [];
-        this.finishArea = null;
+        this.gateBarriers = [];
+        this.bridges = [];
         this.exitGate = null;
         this.exitGateSpawned = false;
-        this.gateBarriers = [];
-        this.bridges = []; // Clear bridges
+        this.particles = [];
+        this.cainOfferings = 0;
+        this.abelOfferings = 0;
         
-        // Level-specific setup
+        if (!this.characters.cain) this.initializeCharacters();
+        
         switch(level) {
-            case 1:
-                this.loadLevel1();
-                break;
-            case 2:
-                this.loadLevel2();
-                break;
-            case 3:
-                this.loadLevel3();
-                break;
-            case 4:
-                this.loadLevelFinal();
-                break;
+            case 1: this.loadLevel1(); break;
+            case 2: this.loadLevel2(); break;
+            case 3: this.loadLevel3(); break;
+            default: this.loadLevel1(); break;
         }
 
-        // Music logic
         if (this.currentMusic) {
             this.currentMusic.pause();
             this.currentMusic.currentTime = 0;
         }
-        if (level >= 1 && level <= 3) {
-            this.currentMusic = this.heartacheMusic;
-            this.currentMusic.loop = true;
-            this.currentMusic.play();
-        } else if (level === 4) {
-            this.currentMusic = this.ominousBellsMusic;
-            this.currentMusic.loop = true;
-            this.currentMusic.play();
+        
+        try {
+            if (level >= 1 && level <= 2) {
+                this.currentMusic = this.heartacheMusic;
+                this.currentMusic.loop = true;
+                this.currentMusic.play().catch(e => console.warn("Audio blocked:", e));
+            } else if (level === 3) {
+                this.currentMusic = this.ominousBellsMusic;
+                this.currentMusic.loop = true;
+                this.currentMusic.play().catch(e => console.warn("Audio blocked:", e));
+            }
+        } catch(e) {
+            console.warn("Audio system error:", e);
         }
         
         this.updateUI();
     }
     
     loadLevel1() {
-        // Tutorial Level: "Puzzle Islands" - Bridge Building Adventure
-        
-        // Longer floating islands with breathing room
         this.platforms.push(
-            {x: 0, y: 550, width: 200, height: 50, type: 'ground'},
-            {x: 300, y: 500, width: 180, height: 50, type: 'ground'},
-            {x: 600, y: 450, width: 160, height: 50, type: 'ground'},
-            {x: 900, y: 400, width: 100, height: 50, type: 'ground'},
-            {x: 1100, y: 350, width: 100, height: 50, type: 'ground'}
+            {x: 0, y: 500, width: 400, height: 50, type: 'ground'},
+            {x: 500, y: 450, width: 200, height: 50, type: 'ground'},
+            {x: 800, y: 400, width: 400, height: 50, type: 'ground'}
         );
-        
-        // High platforms for Abel's double jump
-        this.platforms.push(
-            {x: 350, y: 420, width: 80, height: 20, type: 'high'},
-            {x: 650, y: 370, width: 80, height: 20, type: 'high'}
-        );
-        
-        // Movable objects for bridge building
-        this.movableObjects.push(
-            {
-                x: 220,
-                y: 520,
-                width: 35,
-                height: 35,
-                color: '#696969',
-                type: 'box',
-                canBePushed: true
-            },
-            {
-                x: 550,
-                y: 400,
-                width: 35,
-                height: 35,
-                color: '#696969',
-                type: 'box',
-                canBePushed: true
-            }
-        );
-        
-        // Bridge switches that create connections between islands (invisible until illuminated)
+        this.platforms.push({x: 550, y: 350, width: 100, height: 20, type: 'high'});
         this.switches.push(
-            {
-                x: 380,
-                y: 380, // High switch - only Abel can reach
-                width: 25,
-                height: 25,
-                color: '#FFD700',
-                activated: false,
-                type: 'bridge1',
-                visible: false,
-                character: 'abel'
-            },
-            {
-                x: 680,
-                y: 330, // High switch - only Abel can reach
-                width: 25,
-                height: 25,
-                color: '#FFD700',
-                activated: false,
-                type: 'bridge2',
-                visible: false,
-                character: 'abel'
-            },
-            {
-                x: 950,
-                y: 360, // High switch - now bridge3, Abel can reach after illumination
-                width: 25,
-                height: 25,
-                color: '#FFD700',
-                activated: false,
-                type: 'bridge3',
-                visible: false,
-                character: 'abel'
-            },
-            {
-                x: 1150,
-                y: 310, // New gate switch
-                width: 25,
-                height: 25,
-                color: '#FFD700',
-                activated: false,
-                type: 'gate',
-                visible: true,
-                character: 'cain'
-            }
+            {x: 600, y: 320, width: 25, height: 25, color: '#FFD700', activated: false, type: 'gate', visible: true, character: 'abel'}
         );
-        
-        // Barriers that Cain must break
-        this.barriers.push(
-            {
-                x: 520,
-                y: 350,
-                width: 25,
-                height: 100,
-                color: '#8B4513',
-                type: 'breakable',
-                health: 1
-            },
-            {
-                x: 800,
-                y: 300,
-                width: 25,
-                height: 100,
-                color: '#8B4513',
-                type: 'breakable',
-                health: 1
-            }
-        );
-        
-        // Cain's offerings (2 total) - visible and accessible
         this.collectibles.push(
-            {
-                x: 350,
-                y: 480,
-                width: 18,
-                height: 18,
-                color: '#CD853F', // Brown for Cain
-                type: 'cain_offering',
-                collected: false,
-                character: 'cain'
-            },
-            {
-                x: 950,
-                y: 380,
-                width: 18,
-                height: 18,
-                color: '#CD853F', // Brown for Cain
-                type: 'cain_offering',
-                collected: false,
-                character: 'cain'
-            }
+            {x: 200, y: 450, width: 18, height: 18, color: '#CD853F', type: 'cain_offering', collected: false, character: 'cain'},
+            {x: 600, y: 300, width: 18, height: 18, color: '#87CEEB', type: 'abel_offering', collected: false, character: 'abel'}
         );
-        
-        // Abel's offerings (2 total) - 1 visible, 1 hidden
-        this.collectibles.push(
-            {
-                x: 650,
-                y: 430,
-                width: 18,
-                height: 18,
-                color: '#87CEEB', // Sky blue for Abel
-                type: 'abel_offering',
-                collected: false,
-                character: 'abel'
-            }
-        );
-        
-        // Abel's hidden offering - only visible when illuminated
-        this.hiddenCollectibles.push(
-            {
-                x: 450,
-                y: 480,
-                width: 16,
-                height: 16,
-                color: '#87CEEB', // Sky blue for Abel
-                type: 'hidden_abel_offering',
-                collected: false,
-                character: 'abel',
-                revealed: false
-            },
-            {
-                x: 700,
-                y: 380,
-                width: 16,
-                height: 16,
-                color: '#87CEEB', // Sky blue for Abel
-                type: 'hidden_abel_offering',
-                collected: false,
-                character: 'abel',
-                revealed: false
-            }
-        );
-        
-        // Gate barriers that trap the exit - Cain must break them
-        this.gateBarriers.push(
-            {x: 1080, y: 300, width: 20, height: 100, color: '#8B0000', type: 'gate_barrier', health: 2},
-            {x: 1120, y: 300, width: 20, height: 100, color: '#8B0000', type: 'gate_barrier', health: 2}
-        );
-        
-        // Reset character positions and velocities
-        this.characters.cain.x = 50;
-        this.characters.cain.y = 500;
-        this.characters.cain.vx = 0;
-        this.characters.cain.vy = 0;
-        this.characters.cain.onGround = false;
-        this.characters.abel.x = 100;
-        this.characters.abel.y = 500;
-        this.characters.abel.vx = 0;
-        this.characters.abel.vy = 0;
-        this.characters.abel.onGround = false;
-        this.characters.abel.jumpCount = 0;
-        this.characters.abel.offerings = 0;
+        this.resetCharPos(50, 450, 100, 450);
     }
-    
+
     loadLevel2() {
-        // Level 2: "Canyon Crossing" - Bridge-centric Puzzle
-
-        // Main ground platforms
         this.platforms.push(
-            {x: 0, y: 550, width: 200, height: 50, type: 'ground'},
-            {x: 400, y: 500, width: 150, height: 50, type: 'ground'},
-            {x: 800, y: 450, width: 100, height: 50, type: 'ground'},
-            {x: 1050, y: 400, width: 150, height: 50, type: 'ground'}
+            {x: 0, y: 500, width: 300, height: 50, type: 'ground'},
+            {x: 400, y: 500, width: 400, height: 50, type: 'ground'},
+            {x: 900, y: 450, width: 300, height: 50, type: 'ground'}
         );
-
-        // High platforms for Abel to reach switches
-        this.platforms.push(
-            {x: 300, y: 420, width: 80, height: 20, type: 'high'},
-            {x: 700, y: 370, width: 80, height: 20, type: 'high'}
-        );
-
-        // Movable objects for Cain to push onto switches or to reach items
         this.movableObjects.push(
-            {x: 150, y: 520, width: 35, height: 35, color: '#696969', type: 'box', canBePushed: true},
-            {x: 500, y: 470, width: 35, height: 35, color: '#696969', type: 'box', canBePushed: true}
+            {x: 200, y: 450, width: 40, height: 40, color: '#696969', type: 'box', canBePushed: true}
         );
-
-        // Switches (bridge switches for Abel, gate switch for Cain)
         this.switches.push(
-            {x: 330, y: 380, width: 25, height: 25, color: '#FFD700', activated: false, type: 'bridge1', visible: false, character: 'abel'}, // Activates bridge to next platform
-            {x: 730, y: 330, width: 25, height: 25, color: '#FFD700', activated: false, type: 'bridge2', visible: false, character: 'abel'}, // Activates bridge to final platform area
-            {x: 1100, y: 360, width: 25, height: 25, color: '#FFD700', activated: false, type: 'bridge3', visible: false, character: 'abel'},
-            {
-                x: 1150,
-                y: 360, // New gate switch
-                width: 25,
-                height: 25,
-                color: '#FFD700',
-                activated: false,
-                type: 'gate',
-                visible: true,
-                character: 'cain'
-            }
+            {x: 600, y: 450, width: 25, height: 25, color: '#FFD700', activated: false, type: 'bridge1', visible: true, character: 'abel'}
         );
-
-        // Barriers that Cain must break
-        this.barriers.push(
-            {x: 600, y: 400, width: 25, height: 100, color: '#8B4513', type: 'breakable', health: 2}
+        this.switches.push(
+            {x: 1000, y: 400, width: 25, height: 25, color: '#FFD700', activated: false, type: 'gate', visible: true, character: 'cain'}
         );
-
-        // Collectibles
+        this.barriers.push({x: 850, y: 350, width: 20, height: 150, color: '#8B4513', type: 'breakable', health: 1});
         this.collectibles.push(
-            {x: 80, y: 530, width: 18, height: 18, color: '#CD853F', type: 'cain_offering', collected: false, character: 'cain'},
-            {x: 450, y: 480, width: 18, height: 18, color: '#CD853F', type: 'cain_offering', collected: false, character: 'cain'},
-            {x: 900, y: 430, width: 18, height: 18, color: '#CD853F', type: 'cain_offering', collected: false, character: 'cain'}
+            {x: 150, y: 450, width: 18, height: 18, color: '#CD853F', type: 'cain_offering', collected: false, character: 'cain'},
+            {x: 500, y: 300, width: 18, height: 18, color: '#87CEEB', type: 'abel_offering', collected: false, character: 'abel'}
         );
-
-        this.collectibles.push(
-            {x: 350, y: 400, width: 18, height: 18, color: '#87CEEB', type: 'abel_offering', collected: false, character: 'abel'}
-        );
-
-        this.hiddenCollectibles.push(
-            {x: 1000, y: 380, width: 16, height: 16, color: '#87CEEB', type: 'hidden_abel_offering', collected: false, character: 'abel', revealed: false},
-            {x: 750, y: 350, width: 16, height: 16, color: '#87CEEB', type: 'hidden_abel_offering', collected: false, character: 'abel', revealed: false}
-        );
-
-        // Gate barriers
-        this.gateBarriers.push(
-            {x: 1150, y: 300, width: 20, height: 100, color: '#8B0000', type: 'gate_barrier', health: 3}
-        );
-
-        // Character starting positions
-        this.characters.cain.x = 50;
-        this.characters.cain.y = 500;
-        this.characters.cain.vx = 0;
-        this.characters.cain.vy = 0;
-        this.characters.cain.onGround = false;
-        this.characters.cain.offerings = 0;
-
-        this.characters.abel.x = 100;
-        this.characters.abel.y = 500;
-        this.characters.abel.vx = 0;
-        this.characters.abel.vy = 0;
-        this.characters.abel.onGround = false;
-        this.characters.abel.jumpCount = 0;
-        this.characters.abel.offerings = 0;
-
-        this.cainOfferings = 0;
-        this.abelOfferings = 0;
+        this.resetCharPos(50, 450, 100, 450);
     }
     
     loadLevel3() {
-        // Final Level: "The Confrontation" - Cain vs. Abel
-
-        // Flat open area
-        this.platforms.push(
-            {x: 0, y: 550, width: this.width, height: 50, type: 'ground'}
-        );
-
-        // Cain's starting position
-        this.characters.cain.x = 200;
-        this.characters.cain.y = 500;
-        this.characters.cain.vx = 0;
-        this.characters.cain.vy = 0;
-        this.characters.cain.onGround = false;
-        this.characters.cain.offerings = 0;
-
-        // Abel's starting position (passive target)
-        this.characters.abel.x = 800;
-        this.characters.abel.y = 500;
-        this.characters.abel.vx = 0;
-        this.characters.abel.vy = 0;
-        this.characters.abel.onGround = false;
-        this.characters.abel.jumpCount = 0;
-        this.characters.abel.offerings = 0;
-        
-        // Ensure Abel is not controllable in this level
+        this.platforms.push({x: 0, y: 550, width: this.width, height: 50, type: 'ground'});
+        if (!this.characters.abel) {
+             this.characters.abel = {
+                x: 800, y: 500, width: 25, height: 35, vx: 0, vy: 0, onGround: false,
+                color: '#87CEEB', abilities: {}, jumpCount: 0, maxJumps: 2, illuminationCooldown: 0, illuminationRadius: 600, offerings: 0
+            };
+        }
+        this.resetCharPos(200, 500, 800, 500);
         this.currentCharacter = 'cain';
-
-        this.cainOfferings = 0;
-        this.abelOfferings = 0;
-        
-        // No switches, barriers, collectibles, etc. in this level
-        this.movableObjects = [];
-        this.switches = [];
-        this.barriers = [];
-        this.earthPlatforms = [];
-        this.illuminatedAreas = [];
-        this.collectibles = [];
-        this.hiddenCollectibles = [];
-        this.finishArea = null;
-        // Define the exit gate for Level 4
-        this.exitGate = {
-            x: 1100,
-            y: 470, // Position on the ground platform
-            width: 50,
-            height: 80,
-            type: 'exit_gate'
-        };
-        this.exitGateSpawned = true; // Gate is always spawned in level 4
-        this.gateBarriers = [];
+        this.exitGate = { x: 1100, y: 470, width: 50, height: 80, type: 'exit_gate' };
+        this.exitGateSpawned = true;
+        this.showMessage("The Final Confrontation");
     }
-    
-    loadLevelFinal() {
-        // Final Level: "The Confrontation" - Cain vs. Abel
 
-        // Flat open area
-        this.platforms.push(
-            {x: 0, y: 550, width: this.width, height: 50, type: 'ground'}
-        );
-
-        // Cain's starting position
-        this.characters.cain.x = 200;
-        this.characters.cain.y = 500;
-        this.characters.cain.vx = 0;
-        this.characters.cain.vy = 0;
-        this.characters.cain.onGround = false;
-        this.characters.cain.offerings = 0;
-
-        // Abel's starting position (passive target)
-        this.characters.abel.x = 800;
-        this.characters.abel.y = 500;
-        this.characters.abel.vx = 0;
-        this.characters.abel.vy = 0;
-        this.characters.abel.onGround = false;
-        this.characters.abel.jumpCount = 0;
-        this.characters.abel.offerings = 0;
-        
-        // Ensure Abel is not controllable in this level
-        this.currentCharacter = 'cain';
-
-        this.cainOfferings = 0;
-        this.abelOfferings = 0;
-        
-        // No switches, barriers, collectibles, etc. in this level
-        this.movableObjects = [];
-        this.switches = [];
-        this.barriers = [];
-        this.earthPlatforms = [];
-        this.illuminatedAreas = [];
-        this.collectibles = [];
-        this.hiddenCollectibles = [];
-        this.finishArea = null;
-        // Define the exit gate for Level 4
-        this.exitGate = {
-            x: 1100,
-            y: 470, // Position on the ground platform
-            width: 50,
-            height: 80,
-            type: 'exit_gate'
-        };
-        this.exitGateSpawned = true; // Gate is always spawned in level 4
-        this.gateBarriers = [];
+    resetCharPos(cx, cy, ax, ay) {
+        if (this.characters.cain) {
+            this.characters.cain.x = cx; this.characters.cain.y = cy;
+            this.characters.cain.vx = 0; this.characters.cain.vy = 0;
+            this.characters.cain.onGround = false;
+        }
+        if (this.characters.abel) {
+            this.characters.abel.x = ax; this.characters.abel.y = ay;
+            this.characters.abel.vx = 0; this.characters.abel.vy = 0;
+            this.characters.abel.onGround = false;
+        }
     }
-    
+
     update() {
-        if (this.gameState === 'finalGameComplete') return; // Stop all updates on final game complete
-        
-        if (this.gameState !== 'playing' && !(this.currentLevel === 4 && this.gameState === 'gameComplete')) return; // Allow movement in gameComplete for Level 4
-        
+        if (this.gameState === 'finalGameComplete') return;
+        if (this.gameState !== 'playing' && !(this.currentLevel === 3 && this.gameState === 'gameComplete')) return;
+
+        if (this.shakeIntensity > 0) this.shakeIntensity *= 0.9;
+        if (this.shakeIntensity < 0.5) this.shakeIntensity = 0;
+
         this.updateCharacters();
         this.updatePhysics();
-        this.updateAbilities();
         this.checkCollisions();
         this.updateSwitches();
-        this.checkGateSpawn();
         this.updateUI();
-        this.checkLevelComplete();
+        
+        this.particles = this.particles.filter(p => p.life > 0);
+        this.particles.forEach(p => p.update());
     }
-    
+
     updateCharacters() {
         const cain = this.characters.cain;
         const abel = this.characters.abel;
         
-        // Cain controls
-        if (this.currentCharacter === 'cain') {
-            let cainSpeed = 1.5; // Consistent slower speed for all levels
-            let cainJump = -8;   // Consistent lower jump for all levels
-
-            if (this.keys['KeyA']) cain.vx = -cainSpeed;
-            else if (this.keys['KeyD']) cain.vx = cainSpeed;
+        if (this.currentCharacter === 'cain' && cain) {
+            let speed = 1.5;
+            if (this.keys['KeyA']) cain.vx = -speed;
+            else if (this.keys['KeyD']) cain.vx = speed;
             else cain.vx *= this.friction;
             
             if (this.keysPressed['KeyW'] && cain.onGround) {
-                cain.vy = cainJump;
+                cain.vy = -8;
                 cain.onGround = false;
                 this.keysPressed['KeyW'] = false;
+                this.createParticles(cain.x + cain.width/2, cain.y + cain.height, 'dust');
             }
-            
-            // Cain abilities
-            if (this.keys['KeyE']) {
-                this.handleCainPush();
-            }
+            if (this.keys['KeyE']) this.handleCainPush();
             if (this.keys['KeyR'] && cain.platformCooldown <= 0) {
                 this.createEarthPlatform(cain.x, cain.y + cain.height);
-                cain.platformCooldown = 120; // 2 seconds at 60fps
+                cain.platformCooldown = 120;
+                this.addScreenShake(3); 
             }
             if (this.keys['KeyT'] && cain.breakCooldown <= 0) {
                 this.breakBarrier(cain.x, cain.y);
-                cain.breakCooldown = 60; // 1 second cooldown
+                cain.breakCooldown = 60;
+                this.addScreenShake(5); 
             }
         }
         
-        // Abel controls
-        if (this.currentCharacter === 'abel' && this.currentLevel !== 4) {
+        if (this.currentCharacter === 'abel' && abel) {
             if (this.keys['KeyJ']) abel.vx = -3;
             else if (this.keys['KeyL']) abel.vx = 3;
             else abel.vx *= this.friction;
@@ -632,977 +317,411 @@ class Game {
                     abel.vy = -12;
                     abel.onGround = false;
                     abel.jumpCount = 1;
+                    this.createParticles(abel.x + abel.width/2, abel.y + abel.height, 'sparkle', 5, '#87CEEB');
                 } else if (abel.jumpCount < abel.maxJumps) {
                     abel.vy = -10;
                     abel.jumpCount++;
+                    this.createParticles(abel.x + abel.width/2, abel.y + abel.height, 'sparkle', 8, '#fff');
                 }
                 this.keysPressed['ShiftLeft'] = false;
                 this.keysPressed['ShiftRight'] = false;
             }
-            
-            // Abel abilities
-            // Abel's gliding is now automatic based on gravity and vy
             if (this.keys['KeyF'] && abel.illuminationCooldown <= 0) {
                 this.illuminateArea(abel.x, abel.y);
-                abel.illuminationCooldown = 180; // 3 seconds cooldown
+                abel.illuminationCooldown = 180;
             }
         }
-        
-        // Update cooldowns
-        if (cain.platformCooldown > 0) cain.platformCooldown--;
-        if (cain.breakCooldown > 0) cain.breakCooldown--;
-        if (abel.illuminationCooldown > 0) abel.illuminationCooldown--;
+
+        if (cain && cain.platformCooldown > 0) cain.platformCooldown--;
+        if (cain && cain.breakCooldown > 0) cain.breakCooldown--;
+        if (abel && abel.illuminationCooldown > 0) abel.illuminationCooldown--;
     }
-    
+
     updatePhysics() {
-        // Apply gravity and update positions
         Object.values(this.characters).forEach(char => {
             char.vy += this.gravity;
             char.x += char.vx;
             char.y += char.vy;
-            
             char.x = Math.max(0, Math.min(this.width - char.width, char.x));
             if (char.y > this.height) {
                 this.restartLevel();
                 return;
             }
         });
-        
-        // Update earth platforms (they dissolve over time)
-        this.earthPlatforms = this.earthPlatforms.filter(platform => {
-            platform.lifetime--;
-            return platform.lifetime > 0;
-        });
-        
-        // Update illumination areas
-        this.illuminatedAreas = this.illuminatedAreas.filter(area => {
-            area.lifetime--;
-            return area.lifetime > 0;
-        });
-    }
-    
-    updateAbilities() {
-        // Handle Abel's automatic gliding
-        const abel = this.characters.abel;
-        if (abel && abel.vy > 0 && !abel.onGround) {
-            abel.vy *= 0.3; // Automatically slow down falling
+        if (this.characters.abel && this.characters.abel.vy > 0 && !this.characters.abel.onGround) {
+            this.characters.abel.vy *= 0.3;
         }
-    }
-    
-    updateSwitches() {
-        // Check switch activations and create bridges
-        this.switches.forEach(switch_obj => {
-            const currentChar = this.characters[this.currentCharacter];
-            
-            // Make switches visible when illuminated by Abel
-            if (switch_obj.character === 'abel' && !switch_obj.visible) {
-                const abel = this.characters.abel;
-                const distance = Math.sqrt(
-                    Math.pow(switch_obj.x - abel.x, 2) + Math.pow(switch_obj.y - abel.y, 2)
-                );
-                if (distance <= abel.illuminationRadius) {
-                    switch_obj.visible = true;
-                }
-            }
-            
-            // Only allow activation if switch is visible and by correct character
-            if (switch_obj.visible && this.checkCollision(currentChar, switch_obj) && 
-                !switch_obj.activated && currentChar === this.characters[switch_obj.character]) {
-                switch_obj.activated = true;
-                
-                switch(switch_obj.type) {
-                    case 'bridge1':
-                        if (this.currentLevel === 1) {
-                            this.createBridge(200, 500, 100, 20);
-                        } else if (this.currentLevel === 2) {
-                            this.createBridge(200, 500, 100, 20);
-                        } else if (this.currentLevel === 3) {
-                            this.createBridge(100, 500, 150, 20);
-                        }
-                        this.showMessage("Bridge 1 activated!");
-                        break;
-                    case 'bridge2':
-                        if (this.currentLevel === 1) {
-                            this.createBridge(480, 450, 120, 20);
-                        } else if (this.currentLevel === 2) {
-                            this.createBridge(550, 450, 200, 20);
-                        } else if (this.currentLevel === 3) {
-                            this.createBridge(600, 400, 150, 20);
-                        }
-                        this.showMessage("Bridge 2 activated!");
-                        break;
-                    case 'bridge3':
-                        if (this.currentLevel === 1) {
-                            this.createBridge(1000, 350, 100, 20);
-                        } else if (this.currentLevel === 2) {
-                            this.createBridge(900, 400, 150, 20);
-                        } else if (this.currentLevel === 3) {
-                            this.createBridge(580, 300, 120, 20);
-                        }
-                        this.showMessage("Bridge 3 activated!");
-                        break;
-                    case 'gate':
-                        this.spawnExitGate();
-                        this.showMessage("Exit gate revealed!");
-                        break;
-                }
-            }
-        });
-    }
-    
-    createBridge(x, y, width, height) {
-        this.bridges.push({
-            x: x,
-            y: y,
-            width: width,
-            height: height,
-            color: '#8B4513',
-            type: 'bridge'
-        });
-    }
-    
-    
-    checkCollisions() {
-        Object.values(this.characters).forEach(char => {
-            char.onGround = false;
-            
-            // Platform collisions
-            this.platforms.forEach(platform => {
-                if (this.checkCollision(char, platform)) {
-                    if (char.vy > 0 && char.y < platform.y) {
-                        char.y = platform.y - char.height;
-                        char.vy = 0;
-                        char.onGround = true;
-                        char.jumpCount = 0;
-                    }
-                }
-            });
-            
-            // Earth platform collisions
-            this.earthPlatforms.forEach(platform => {
-                if (this.checkCollision(char, platform)) {
-                    if (char.vy > 0 && char.y < platform.y) {
-                        char.y = platform.y - char.height;
-                        char.vy = 0;
-                        char.onGround = true;
-                        char.jumpCount = 0;
-                    }
-                }
-            });
-            
-            // Bridge collisions
-            this.bridges.forEach(bridge => {
-                if (this.checkCollision(char, bridge)) {
-                    if (char.vy > 0 && char.y < bridge.y) {
-                        char.y = bridge.y - char.height;
-                        char.vy = 0;
-                        char.onGround = true;
-                        char.jumpCount = 0;
-                    }
-                }
-            });
-            
-            // Movable object collisions
-            this.movableObjects.forEach(obj => {
-                if (this.checkCollision(char, obj)) {
-                    // Basic collision response for movable objects
-                    if (char.vy > 0 && char.y < obj.y) {
-                        char.y = obj.y - char.height;
-                        char.vy = 0;
-                        char.onGround = true;
-                        char.jumpCount = 0;
-                    } else if (char.vy < 0 && char.y + char.height > obj.y + obj.height) {
-                        char.y = obj.y + obj.height;
-                        char.vy = 0;
-                    } else if (char.vx > 0 && char.x < obj.x) {
-                        char.x = obj.x - char.width;
-                        char.vx = 0;
-                    } else if (char.vx < 0 && char.x + char.width > obj.x + obj.width) {
-                        char.x = obj.x + obj.width;
-                        char.vx = 0;
-                    }
-                }
-            });
-            
-            // Barrier collisions
-            this.barriers.forEach(barrier => {
-                if (this.checkCollision(char, barrier)) {
-                    if (char.vy > 0 && char.y < barrier.y) {
-                        char.y = barrier.y - char.height;
-                        char.vy = 0;
-                        char.onGround = true;
-                        char.jumpCount = 0;
-                    } else if (char.vy < 0 && char.y + char.height > barrier.y + barrier.height) {
-                        char.y = barrier.y + barrier.height;
-                        char.vy = 0;
-                    } else if (char.vx > 0 && char.x < barrier.x) {
-                        char.x = barrier.x - char.width;
-                        char.vx = 0;
-                    } else if (char.vx < 0 && char.x + char.width > barrier.x + barrier.width) {
-                        char.x = barrier.x + barrier.width;
-                        char.vx = 0;
-                    }
-                }
-            });
-
-            // Gate barrier collisions
-            this.gateBarriers.forEach(barrier => {
-                if (this.checkCollision(char, barrier)) {
-                    if (char.vy > 0 && char.y < barrier.y) {
-                        char.y = barrier.y - char.height;
-                        char.vy = 0;
-                        char.onGround = true;
-                        char.jumpCount = 0;
-                    } else if (char.vy < 0 && char.y + char.height > barrier.y + barrier.height) {
-                        char.y = barrier.y + barrier.height;
-                        char.vy = 0;
-                    } else if (char.vx > 0 && char.x < barrier.x) {
-                        char.x = barrier.x - char.width;
-                        char.vx = 0;
-                    } else if (char.vx < 0 && char.x + char.width > barrier.x + barrier.width) {
-                        char.x = barrier.x + barrier.width;
-                        char.vx = 0;
-                    }
-                }
-            });
-            
-            // Collectible collisions - character-specific
-            this.collectibles.forEach(collectible => {
-                if (!collectible.collected && this.checkCollision(char, collectible)) {
-                    if (collectible.character === 'cain' && char === this.characters.cain) {
-                        collectible.collected = true;
-                        this.cainOfferings++;
-                        this.showMessage(`Cain's offering collected! (${this.cainOfferings}/${this.maxCainOfferings})`);
-                    } else if (collectible.character === 'abel' && char === this.characters.abel) {
-                        collectible.collected = true;
-                        this.abelOfferings++;
-                        this.showMessage(`Abel's offering collected! (${this.abelOfferings}/${this.maxAbelOfferings})`);
-                    }
-                }
-            });
-            
-            // Hidden collectible collisions - revealed by illumination
-            this.hiddenCollectibles.forEach(collectible => {
-                if (!collectible.collected && collectible.revealed && this.checkCollision(char, collectible)) {
-                    if (collectible.character === 'abel' && char === this.characters.abel) {
-                        collectible.collected = true;
-                        this.abelOfferings++;
-                        this.showMessage(`Hidden offering revealed and collected! (${this.abelOfferings}/2)`);
-                    }
-                }
-            });
-            
-            // Exit gate collision
-            if (this.exitGate && this.checkCollision(char, this.exitGate)) {
-                // Check if near exit gate - both characters must be present
-                const cain = this.characters.cain;
-                const abel = this.characters.abel;
-                const gate = this.exitGate;
-                
-                const cainNearGate = Math.abs(cain.x - gate.x) < 80 && Math.abs(cain.y - gate.y) < 80;
-                const abelNearGate = Math.abs(abel.x - gate.x) < 80 && Math.abs(abel.y - gate.y) < 80;
-                
-                if (cainNearGate && abelNearGate && this.gateBarriers.length === 0) {
-                    this.completeLevel();
-                }
-            }
-            
-            // Level 4: Cain kills Abel collision or passes through door
-            if (this.currentLevel === 4) {
-                if (char === this.characters.cain && this.checkCollision(this.characters.cain, this.characters.abel)) {
-                    this.gameState = 'gameComplete'; // Abel is killed
-                    this.showMessage('Cain rose up against his brother Abel and killed him.', 5000); // 5 seconds
-                    delete this.characters.abel; // Remove Abel after he is killed
-
-                    // Show mark of Cain message after a delay
-                    setTimeout(() => {
-                        this.showMessage('The Lord put a mark on Cain so that no one who found him would kill him. He was doomed to wander the earth.', 5000); // 5 seconds
-                        // Fade to black and show restart button after another delay
-                        setTimeout(() => {
-                            this.fadeToBlackAndShowRestart();
-                        }, 5000); // Wait for mark of Cain message to be read
-                    }, 5000); // Wait for kill message to be read
-                }
-                // If Abel is killed, and Cain collides with the exit gate
-                if (this.gameState === 'gameComplete' && char === this.characters.cain && this.checkCollision(this.characters.cain, this.exitGate)) {
-                    // This branch is now handled by the setTimeout chain above, so we effectively remove it.
-                    // However, we still need the exitGate definition to be there for drawing.
-                }
-            }
-        });
-    }
-    
-    checkGateSpawn() {
-        if (!this.exitGateSpawned && this.cainOfferings >= 2 && this.abelOfferings >= 3) {
-            this.spawnExitGate();
-        }
-    }
-    
-    spawnExitGate() {
-        this.exitGateSpawned = true;
-        this.exitGate = {
-            x: 1150,
-            y: this.currentLevel === 1 ? 300 : (this.currentLevel === 2 ? 250 : 300),
-            width: 50,
-            height: 80,
-            type: 'exit_gate'
-        };
-        this.showMessage('Exit gate has appeared! Break the barriers to access it!');
-    }
-    
-    checkCollision(rect1, rect2) {
-        return rect1.x < rect2.x + rect2.width &&
-               rect1.x + rect1.width > rect2.x &&
-               rect1.y < rect2.y + rect2.height &&
-               rect1.y + rect1.height > rect2.y;
+        this.earthPlatforms = this.earthPlatforms.filter(p => p.lifetime-- > 0);
+        this.illuminatedAreas = this.illuminatedAreas.filter(a => a.lifetime-- > 0);
     }
     
     handleCainPush() {
         const cain = this.characters.cain;
-        const pushDirection = cain.vx > 0 ? 1 : -1;
-        
+        const dir = cain.vx > 0 ? 1 : -1;
         this.movableObjects.forEach(obj => {
             if (this.checkCollision(cain, obj) && obj.canBePushed) {
-                obj.x += pushDirection * cain.pushPower;
-                obj.x = Math.max(0, Math.min(this.width - obj.width, obj.x));
+                obj.x += dir * cain.pushPower;
+                this.createParticles(obj.x + (dir > 0 ? 0 : obj.width), obj.y + obj.height, 'dust', 1);
             }
         });
     }
-    
+
     createEarthPlatform(x, y) {
-        this.earthPlatforms.push({
-            x: x - 20,
-            y: y,
-            width: 40,
-            height: 10,
-            color: '#8B4513',
-            lifetime: 300, // 5 seconds at 60fps
-            type: 'earth'
-        });
+        this.earthPlatforms.push({x: x - 20, y: y, width: 40, height: 10, color: '#8B4513', lifetime: 300, type: 'earth'});
+        this.createParticles(x, y, 'debris', 10, '#8B4513');
     }
-    
+
     breakBarrier(x, y) {
-        // Break regular barriers
-        this.barriers.forEach((barrier, index) => {
-            if (this.checkCollision({x, y, width: 50, height: 50}, barrier)) {
-                barrier.health--;
-                if (barrier.health <= 0) {
-                    this.barriers.splice(index, 1);
-                    this.showMessage("Barrier broken!");
+        const checkBreak = (list) => {
+            list.forEach((b, i) => {
+                if (this.checkCollision({x, y, width: 50, height: 50}, b)) {
+                    b.health--;
+                    this.createParticles(b.x + b.width/2, b.y + b.height/2, 'debris', 5, b.color);
+                    if (b.health <= 0) {
+                        list.splice(i, 1);
+                        this.createParticles(b.x + b.width/2, b.y + b.height/2, 'debris', 20, b.color);
+                        this.showMessage("Barrier Shattered!");
+                    }
                 }
-            }
-        });
-        
-        // Break gate barriers
-        this.gateBarriers.forEach((barrier, index) => {
-            if (this.checkCollision({x, y, width: 50, height: 50}, barrier)) {
-                barrier.health--;
-                if (barrier.health <= 0) {
-                    this.gateBarriers.splice(index, 1);
-                    this.showMessage("Gate barrier destroyed!");
-                }
-            }
-        });
+            });
+        };
+        checkBreak(this.barriers);
+        checkBreak(this.gateBarriers);
     }
-    
+
     illuminateArea(x, y) {
-        // Create illumination area with larger radius
         const abel = this.characters.abel;
         this.illuminatedAreas.push({
-            x: x - abel.illuminationRadius/2,
-            y: y - abel.illuminationRadius/2,
-            width: abel.illuminationRadius,
-            height: abel.illuminationRadius,
-            color: 'rgba(255, 255, 0, 0.4)',
-            lifetime: 180, // 3 seconds
-            type: 'illumination'
+            x: x - abel.illuminationRadius/2, y: y - abel.illuminationRadius/2,
+            width: abel.illuminationRadius, height: abel.illuminationRadius,
+            lifetime: 180, type: 'illumination'
         });
-        
-        // Reveal hidden collectibles within illumination radius
-        this.hiddenCollectibles.forEach(collectible => {
-            if (!collectible.revealed) {
-                const dx = collectible.x - x;
-                const dy = collectible.y - y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance <= abel.illuminationRadius) {
-                    collectible.revealed = true;
-                    this.showMessage("Hidden offering revealed by light!");
+        this.hiddenCollectibles.forEach(c => {
+            if (!c.revealed) {
+                const dist = Math.hypot(c.x - x, c.y - y);
+                if (dist <= abel.illuminationRadius) {
+                    c.revealed = true;
+                    this.createParticles(c.x, c.y, 'sparkle', 10, '#00FFFF');
                 }
             }
         });
     }
-    
-    switchCharacter(character) {
-        this.currentCharacter = character;
+
+    updateSwitches() {
+        this.switches.forEach(s => {
+            if (s.character === 'abel' && !s.visible && this.characters.abel) {
+                 const dist = Math.hypot(s.x - this.characters.abel.x, s.y - this.characters.abel.y);
+                 if (dist <= 600) s.visible = true; 
+            }
+            const char = this.characters[this.currentCharacter];
+            if (s.visible && !s.activated && this.checkCollision(char, s) && char === this.characters[s.character]) {
+                s.activated = true;
+                this.addScreenShake(2);
+                this.createParticles(s.x + s.width/2, s.y, 'sparkle', 10, '#FFD700');
+                if (s.type.startsWith('bridge')) {
+                    if (s.type === 'bridge1') { 
+                        this.bridges.push({x: 300, y: 500, width: 100, height: 50, color: '#8B4513', type: 'bridge'});
+                    }
+                    this.showMessage("Bridge Formed!");
+                } else if (s.type === 'gate') {
+                    this.spawnExitGate();
+                }
+            }
+        });
+    }
+
+    spawnExitGate() {
+        this.exitGateSpawned = true;
+        const gy = this.currentLevel === 1 ? 350 : (this.currentLevel === 2 ? 400 : 470);
+        const gx = this.currentLevel === 1 ? 1100 : (this.currentLevel === 2 ? 1100 : 1100);
+        this.exitGate = { x: gx, y: gy, width: 50, height: 80, type: 'exit_gate' };
+        this.showMessage('The Path is Open!');
+        this.addScreenShake(10);
+    }
+
+    checkCollisions() {
+        Object.values(this.characters).forEach(char => {
+            char.onGround = false;
+            const solids = [...this.platforms, ...this.earthPlatforms, ...this.bridges, ...this.movableObjects, ...this.barriers, ...this.gateBarriers];
+            
+            solids.forEach(solid => {
+                const charHalfW = char.width / 2;
+                const charHalfH = char.height / 2;
+                const solidHalfW = solid.width / 2;
+                const solidHalfH = solid.height / 2;
+                const charCenterX = char.x + charHalfW;
+                const charCenterY = char.y + charHalfH;
+                const solidCenterX = solid.x + solidHalfW;
+                const solidCenterY = solid.y + solidHalfH;
+                const dx = charCenterX - solidCenterX;
+                const dy = charCenterY - solidCenterY;
+                const minDistX = charHalfW + solidHalfW;
+                const minDistY = charHalfH + solidHalfH;
+
+                if (Math.abs(dx) < minDistX && Math.abs(dy) < minDistY) {
+                    const ox = minDistX - Math.abs(dx);
+                    const oy = minDistY - Math.abs(dy);
+                    if (ox >= oy) {
+                        if (dy > 0) {
+                            char.y += oy;
+                            char.vy = 0;
+                        } else {
+                            char.y -= oy;
+                            char.vy = 0;
+                            char.onGround = true;
+                            char.jumpCount = 0;
+                        }
+                    } else {
+                        if (dx > 0) {
+                            char.x += ox;
+                            char.vx = 0;
+                        } else {
+                            char.x -= ox;
+                            char.vx = 0;
+                        }
+                    }
+                }
+            });
+
+            [...this.collectibles, ...this.hiddenCollectibles].forEach(c => {
+                if (!c.collected && (c.visible !== false || c.revealed) && this.checkCollision(char, c)) {
+                    if ((c.character === 'cain' && char === this.characters.cain) || (c.character === 'abel' && char === this.characters.abel)) {
+                        c.collected = true;
+                        if (c.character === 'cain') this.cainOfferings++; else this.abelOfferings++;
+                        this.createParticles(c.x, c.y, 'sparkle', 15, c.color);
+                        this.showMessage("Offering Accepted");
+                    }
+                }
+            });
+            
+            if (this.exitGate && this.checkCollision(char, this.exitGate)) {
+                const cain = this.characters.cain;
+                const abel = this.characters.abel;
+                if (abel && Math.abs(cain.x - this.exitGate.x) < 80 && Math.abs(abel.x - this.exitGate.x) < 80 && this.gateBarriers.length === 0) {
+                    this.completeLevel();
+                }
+            }
+            
+            if (this.currentLevel === 3 && char === this.characters.cain && this.characters.abel && this.checkCollision(this.characters.cain, this.characters.abel)) {
+                 this.gameState = 'gameComplete';
+                 this.showMessage('Cain rose up against his brother Abel...', 5000);
+                 delete this.characters.abel;
+                 this.addScreenShake(20);
+                 this.createParticles(this.characters.cain.x, this.characters.cain.y, 'debris', 50, '#8B0000');
+                 setTimeout(() => {
+                     this.showMessage('And killed him.', 4000);
+                     setTimeout(() => this.fadeToBlackAndShowRestart(), 4000);
+                 }, 4000);
+            }
+        });
+    }
+
+    checkCollision(r1, r2) {
+        return r1.x < r2.x + r2.width && r1.x + r1.width > r2.x &&
+               r1.y < r2.y + r2.height && r1.y + r1.height > r2.y;
+    }
+
+    switchCharacter(name) {
+        this.currentCharacter = name;
+        if (this.characters[name]) {
+            this.createParticles(this.characters[name].x, this.characters[name].y, 'sparkle', 5, '#fff');
+        }
         this.updateUI();
     }
-    
+
     togglePause() {
         this.gameState = this.gameState === 'playing' ? 'paused' : 'playing';
-        this.showMessage(this.gameState === 'paused' ? 'Game Paused' : 'Game Resumed');
+        this.showMessage(this.gameState === 'paused' ? 'Paused' : 'Resumed');
     }
-    
+
     restartLevel() {
-        this.cainOfferings = 0;
-        this.abelOfferings = 0;
-        this.exitGateSpawned = false;
-        this.bridges = []; // Clear bridges
-        this.initializeCharacters(); // Reinitialize characters
         this.loadLevel(this.currentLevel);
         this.gameState = 'playing';
-        this.characters.cain.vx = 0;
-        this.characters.cain.vy = 0;
-        this.characters.abel.vx = 0;
-        this.characters.abel.vy = 0;
-        this.updateUI(); // Update UI immediately
-        this.render();   // Render immediately after reset
-        this.showMessage('Level Restarted');
+        this.showMessage('Restarting Chapter...');
     }
-    
+
     completeLevel() {
-        const completedLevel = this.currentLevel; // Store current level before incrementing
-
+        const prev = this.currentLevel;
         this.currentLevel++;
-        if (this.currentLevel > 4) { // Update for new final level
-            this.gameState = 'gameComplete';
-            this.showMessage('The Lord said to Cain, "Where is your brother Abel?"');
+        if (this.currentLevel > 3) {
+             this.gameState = 'gameComplete';
         } else {
-            this.gameState = 'levelComplete';
-            this.showMessage(`Level ${completedLevel} Complete! Proceeding to Level ${this.currentLevel}`);
-            setTimeout(() => {
-                this.cainOfferings = 0;
-                this.abelOfferings = 0;
-                this.exitGateSpawned = false;
-                this.loadLevel(this.currentLevel);
-                this.gameState = 'playing';
-                this.characters.cain.vx = 0;
-                this.characters.cain.vy = 0;
-                this.characters.abel.vx = 0;
-                this.characters.abel.vy = 0;
-                // If transitioning to Level 4, show the specific message
-                if (this.currentLevel === 4) {
-                    this.showMessage('"Am I my brother\'s keeper?"');
-                }
-            }, 2000);
+             this.gameState = 'levelComplete';
+             this.showMessage(`Chapter ${prev} Complete`);
+             
+             setTimeout(() => {
+                 try {
+                     this.loadLevel(this.currentLevel);
+                     this.gameState = 'playing';
+                 } catch (e) {
+                     console.error("Critical error in level transition:", e);
+                     this.gameState = 'playing';
+                 }
+             }, 2000);
         }
     }
-    
-    checkLevelComplete() {
-        // This is now handled by completeLevel() method called from collision detection
-    }
-    
+
     updateUI() {
-        document.getElementById('currentCharacter').textContent = `Current: ${this.currentCharacter.charAt(0).toUpperCase() + this.currentCharacter.slice(1)}`;
-        document.getElementById('levelProgress').textContent = `Level: ${this.currentLevel}`;
-        document.getElementById('offerings').textContent = `Cain: ${this.cainOfferings}/2 | Abel: ${this.abelOfferings}/3`;
-    }
-    
-    showMessage(text, duration = 3000) {
-        const messageEl = document.getElementById('gameMessage');
-        const contentEl = document.getElementById('messageContent');
-        contentEl.textContent = text;
-        messageEl.classList.remove('hidden');
+        const hudChar = document.getElementById('currentCharacter');
+        const hudLevel = document.getElementById('levelProgress');
+        const hudCain = document.getElementById('cainOfferings');
+        const hudAbel = document.getElementById('abelOfferings');
+
+        if (hudChar) hudChar.textContent = this.currentCharacter.toUpperCase();
+        if (hudLevel) hudLevel.textContent = this.currentLevel;
+        if (hudCain) hudCain.textContent = `Cain: ${this.cainOfferings}/${this.maxCainOfferings}`;
+        if (hudAbel) hudAbel.textContent = `Abel: ${this.abelOfferings}/${this.maxAbelOfferings}`;
         
-        setTimeout(() => {
-            messageEl.classList.add('hidden');
-        }, duration); // Use provided duration or default
-    }
-
-    addRestartButton() {
-        const gameUI = document.getElementById('gameUI');
-        let restartButton = document.getElementById('restartButton');
-
-        if (!restartButton) {
-            restartButton = document.createElement('button');
-            restartButton.id = 'restartButton';
-            restartButton.textContent = 'Restart Game';
-            restartButton.classList.add('restart-button'); // Add a class for styling
-            restartButton.addEventListener('click', () => this.restartGame());
-            gameUI.appendChild(restartButton);
+        if (this.currentCharacter === 'cain' && hudCain && hudAbel) {
+            hudCain.style.opacity = '1'; hudAbel.style.opacity = '0.5';
+        } else if (hudCain && hudAbel) {
+            hudCain.style.opacity = '0.5'; hudAbel.style.opacity = '1';
         }
     }
 
-    restartGame() {
-        // Stop and reset current music
-        if (this.currentMusic) {
-            this.currentMusic.pause();
-            this.currentMusic.currentTime = 0;
+    showMessage(text, duration = 3000) {
+        const el = document.getElementById('gameMessage');
+        const content = document.getElementById('messageContent');
+        if (el && content) {
+            content.textContent = text;
+            el.classList.remove('hidden');
+            if (this.msgTimeout) clearTimeout(this.msgTimeout);
+            this.msgTimeout = setTimeout(() => el.classList.add('hidden'), duration);
         }
-
-        // Reset all game state to initial values
-        this.currentLevel = 1;
-        this.currentCharacter = 'cain';
-        this.gameState = 'playing';
-        this.cainOfferings = 0;
-        this.abelOfferings = 0;
-        this.exitGateSpawned = false;
-
-        // Clear game objects
-        this.platforms = [];
-        this.movableObjects = [];
-        this.switches = [];
-        this.barriers = [];
-        this.earthPlatforms = [];
-        this.illuminatedAreas = [];
-        this.collectibles = [];
-        this.hiddenCollectibles = [];
-        this.finishArea = null;
-        this.exitGate = null;
-        this.gateBarriers = [];
-        this.bridges = [];
-
-        // Remove restart button if present
-        const restartButton = document.getElementById('restartButton');
-        if (restartButton) {
-            restartButton.remove();
-        }
-
-        // Reinitialize characters and load Level 1
-        this.ctx.clearRect(0, 0, this.width, this.height); // Clear canvas on restart
-        this.initializeCharacters();
-        this.loadLevel(this.currentLevel);
-        this.updateUI();
-        this.showMessage('Game Restarted!');
     }
 
     fadeToBlackAndShowRestart() {
-        this.gameState = 'finalGameComplete';
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.05)'; // Start with a slight fade
-        let opacity = 0;
-        const fadeInterval = setInterval(() => {
-            opacity += 0.02; // Increase opacity for fade effect
-            this.ctx.fillRect(0, 0, this.width, this.height); // Draw black rectangle
-            this.ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
-            if (opacity >= 1) {
-                clearInterval(fadeInterval);
-                this.addRestartButton();
-            }
-        }, 50); // Fade speed
-    }
-    
-    render() {
-        // Clear canvas
-        this.ctx.clearRect(0, 0, this.width, this.height);
-        
-        // Draw dark background
-        this.drawDarkBackground();
-        
-        // Apply darkness overlay (everything except illuminated areas)
-        this.applyDarkness();
-        
-        // Draw game objects in illuminated areas or always visible
-        this.drawGameObjects();
-        
-        // Draw illumination areas (light sources)
-        this.illuminatedAreas.forEach(area => this.drawIllumination(area));
-        
-        // Draw characters (always visible with slight glow)
-        Object.entries(this.characters).forEach(([name, char]) => {
-            this.drawCharacter(char, name);
-        });
-        
-        // Draw character selection highlight
-        const currentChar = this.characters[this.currentCharacter];
-        this.ctx.strokeStyle = '#FFD700';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeRect(currentChar.x - 2, currentChar.y - 2, currentChar.width + 4, currentChar.height + 4);
-    }
-    
-    drawDarkBackground() {
-        if (this.currentLevel === 4) {
-            // Reddish gradient background for Level 4
-            const gradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
-            gradient.addColorStop(0, '#8B0000'); // Dark Red
-            gradient.addColorStop(0.3, '#A52A2A'); // Brownish Red
-            gradient.addColorStop(0.7, '#8B0000');
-            gradient.addColorStop(1, '#610000'); // Even Darker Red
-            this.ctx.fillStyle = gradient;
-            this.ctx.fillRect(0, 0, this.width, this.height);
-        } else if (this.exitGateSpawned) {
-            // Shining effect when gate is spawned
-            const gradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
-            gradient.addColorStop(0, '#FFE4B5');
-            gradient.addColorStop(0.3, '#F0E68C');
-            gradient.addColorStop(0.6, '#FFD700');
-            gradient.addColorStop(1, '#FFA500');
-            this.ctx.fillStyle = gradient;
-            this.ctx.fillRect(0, 0, this.width, this.height);
-            
-            // Add sparkle effect
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            for (let i = 0; i < 20; i++) {
-                const x = Math.random() * this.width;
-                const y = Math.random() * this.height;
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, 2, 0, Math.PI * 2);
-                this.ctx.fill();
-            }
-        } else {
-            // Dark gradient background
-            const gradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
-            gradient.addColorStop(0, '#1a1a1a');
-            gradient.addColorStop(0.3, '#2d2d2d');
-            gradient.addColorStop(0.7, '#1a1a1a');
-            gradient.addColorStop(1, '#0d0d0d');
-            this.ctx.fillStyle = gradient;
-            this.ctx.fillRect(0, 0, this.width, this.height);
+        const el = document.getElementById('startButtonContainer');
+        const btn = document.getElementById('startButton');
+        if (el && btn) {
+            el.classList.remove('hidden');
+            btn.textContent = 'Begin Anew';
+            btn.onclick = () => location.reload(); 
         }
+    }
+    
+    drawBackground() {
+        const g = this.ctx.createLinearGradient(0, 0, 0, this.height);
+        if (this.currentLevel === 3) { g.addColorStop(0, '#300'); g.addColorStop(1, '#100'); }
+        else { g.addColorStop(0, '#111'); g.addColorStop(1, '#050505'); }
+        this.ctx.fillStyle = g;
+        this.ctx.fillRect(0, 0, this.width, this.height);
     }
     
     applyDarkness() {
-        // Create darkness overlay - lighter when gate is spawned
-        const darknessLevel = this.exitGateSpawned ? 0.2 : this.darkness;
-        this.ctx.fillStyle = `rgba(0, 0, 0, ${darknessLevel})`;
+        const darkness = this.exitGateSpawned ? 0.3 : this.darkness;
+        this.ctx.fillStyle = `rgba(0,0,0,${darkness})`;
         this.ctx.fillRect(0, 0, this.width, this.height);
-        
-        // Cut out illuminated areas from darkness
-        this.illuminatedAreas.forEach(area => {
-            this.ctx.globalCompositeOperation = 'destination-out';
-            const gradient = this.ctx.createRadialGradient(
-                area.x + area.width/2, area.y + area.height/2, 0,
-                area.x + area.width/2, area.y + area.height/2, area.width/2
-            );
-            gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
-            gradient.addColorStop(0.7, 'rgba(0, 0, 0, 0.8)');
-            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            this.ctx.fillStyle = gradient;
+        this.ctx.globalCompositeOperation = 'destination-out';
+        this.illuminatedAreas.forEach(a => {
+            const g = this.ctx.createRadialGradient(a.x + a.width/2, a.y + a.height/2, 0, a.x + a.width/2, a.y + a.height/2, a.width/2);
+            g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+            this.ctx.fillStyle = g;
             this.ctx.beginPath();
-            this.ctx.arc(area.x + area.width/2, area.y + area.height/2, area.width/2, 0, Math.PI * 2);
+            this.ctx.arc(a.x + a.width/2, a.y + a.height/2, a.width/2, 0, Math.PI*2);
             this.ctx.fill();
-            this.ctx.globalCompositeOperation = 'source-over';
         });
+        this.ctx.globalCompositeOperation = 'source-over';
     }
-    
-    drawGameObjects() {
-        // Platforms
-        this.platforms.forEach(platform => this.drawPlatform(platform));
-        
-        // Earth platforms
-        this.earthPlatforms.forEach(platform => this.drawEarthPlatform(platform));
-        
-        // Draw bridges
-        this.bridges.forEach(bridge => this.drawBridge(bridge));
-        
-        // Movable objects
-        this.movableObjects.forEach(obj => this.drawMovableObject(obj));
-        
-        // Barriers
-        this.barriers.forEach(barrier => this.drawBarrier(barrier));
-        
-        // Gate barriers
-        this.gateBarriers.forEach(barrier => this.drawGateBarrier(barrier));
-        
-        // Switches (only visible ones)
-        this.switches.forEach(switch_obj => {
-            if (switch_obj.visible) {
-                this.drawSwitch(switch_obj);
-            }
-        });
-        
-        // Visible collectibles
-        this.collectibles.forEach(collectible => this.drawCollectible(collectible));
-        
-        // Hidden collectibles (only if revealed)
-        this.hiddenCollectibles.forEach(collectible => {
-            if (collectible.revealed) {
-                this.drawHiddenCollectible(collectible);
-            }
-        });
-        
-        // Exit gate
-        if (this.exitGate) {
-            this.drawExitGate(this.exitGate);
-        }
-    }
-    
-    drawPlatform(platform) {
-        // Dark platform colors for gritty atmosphere
-        switch(platform.type) {
-            case 'ground':
-                this.ctx.fillStyle = '#3d3d3d';
-                this.ctx.strokeStyle = '#2a2a2a';
-                break;
-            case 'small':
-                this.ctx.fillStyle = '#4a4a4a';
-                this.ctx.strokeStyle = '#3d3d3d';
-                break;
-            case 'floating':
-                this.ctx.fillStyle = '#5d5d5d';
-                this.ctx.strokeStyle = '#4a4a4a';
-                break;
-            case 'high':
-                this.ctx.fillStyle = '#6a6a6a';
-                this.ctx.strokeStyle = '#5d5d5d';
-                break;
-            default:
-                this.ctx.fillStyle = '#3d3d3d';
-                this.ctx.strokeStyle = '#2a2a2a';
-        }
-        
-        this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
-    }
-    
-    drawEarthPlatform(platform) {
-        this.ctx.fillStyle = '#654321';
-        this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
-        this.ctx.strokeStyle = '#4a3018';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
-    }
-    
-    drawBridge(bridge) {
-        // Draw bridge with wood texture
-        this.ctx.fillStyle = '#8B4513';
-        this.ctx.fillRect(bridge.x, bridge.y, bridge.width, bridge.height);
-        this.ctx.strokeStyle = '#654321';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeRect(bridge.x, bridge.y, bridge.width, bridge.height);
-        
-        // Add wood planks effect
-        this.ctx.strokeStyle = '#654321';
-        this.ctx.lineWidth = 1;
-        for (let i = 0; i < bridge.width; i += 20) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(bridge.x + i, bridge.y);
-            this.ctx.lineTo(bridge.x + i, bridge.y + bridge.height);
-            this.ctx.stroke();
-        }
-        
-        // Add glow effect
-        this.ctx.shadowColor = '#FFD700';
-        this.ctx.shadowBlur = 5;
-        this.ctx.strokeRect(bridge.x, bridge.y, bridge.width, bridge.height);
-        this.ctx.shadowBlur = 0;
-    }
-    
-    drawSwitch(switch_obj) {
-        // Draw switch with different colors based on activation
-        this.ctx.fillStyle = switch_obj.activated ? '#00FF00' : switch_obj.color;
-        this.ctx.fillRect(switch_obj.x, switch_obj.y, switch_obj.width, switch_obj.height);
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(switch_obj.x, switch_obj.y, switch_obj.width, switch_obj.height);
-        
-        // Add glow effect for visible switches
-        this.ctx.shadowColor = switch_obj.color;
-        this.ctx.shadowBlur = 8;
-        this.ctx.strokeRect(switch_obj.x, switch_obj.y, switch_obj.width, switch_obj.height);
-        this.ctx.shadowBlur = 0;
-    }
-    
-    drawMovableObject(obj) {
-        this.ctx.fillStyle = obj.color;
-        this.ctx.fillRect(obj.x, obj.y, obj.width, obj.height);
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(obj.x, obj.y, obj.width, obj.height);
-    }
-    
-    drawBarrier(barrier) {
-        this.ctx.fillStyle = barrier.color;
-        this.ctx.fillRect(barrier.x, barrier.y, barrier.width, barrier.height);
-        this.ctx.strokeStyle = '#4a2c0a';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(barrier.x, barrier.y, barrier.width, barrier.height);
-    }
-    
-    drawGateBarrier(barrier) {
-        this.ctx.fillStyle = barrier.color;
-        this.ctx.fillRect(barrier.x, barrier.y, barrier.width, barrier.height);
-        this.ctx.strokeStyle = '#660000';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeRect(barrier.x, barrier.y, barrier.width, barrier.height);
-        
-        // Add danger pattern
-        this.ctx.strokeStyle = '#ff4444';
-        this.ctx.lineWidth = 1;
-        for (let i = 0; i < barrier.height; i += 10) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(barrier.x, barrier.y + i);
-            this.ctx.lineTo(barrier.x + barrier.width, barrier.y + i + 5);
-            this.ctx.stroke();
-        }
-    }
-    
-    drawCollectible(collectible) {
-        if (!collectible.collected) {
-            this.ctx.fillStyle = collectible.color;
-            this.ctx.beginPath();
-            this.ctx.arc(collectible.x + collectible.width/2, collectible.y + collectible.height/2, collectible.width/2, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.strokeStyle = '#FFD700';
-            this.ctx.lineWidth = 2;
-            this.ctx.stroke();
-            
-            // Add glow effect
-            this.ctx.shadowColor = collectible.color;
-            this.ctx.shadowBlur = 8;
-            this.ctx.stroke();
-            this.ctx.shadowBlur = 0;
-        }
-    }
-    
-    drawHiddenCollectible(collectible) {
-        if (!collectible.collected && collectible.revealed) {
-            this.ctx.fillStyle = collectible.color;
-            this.ctx.beginPath();
-            this.ctx.arc(collectible.x + collectible.width/2, collectible.y + collectible.height/2, collectible.width/2, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.strokeStyle = '#00FFFF';
-            this.ctx.lineWidth = 2;
-            this.ctx.stroke();
-            
-            // Special glow for revealed offerings
-            this.ctx.shadowColor = '#00FFFF';
-            this.ctx.shadowBlur = 12;
-            this.ctx.stroke();
-            this.ctx.shadowBlur = 0;
-        }
-    }
-    
-    drawIllumination(area) {
-        // Draw illumination as radial gradient
-        const gradient = this.ctx.createRadialGradient(
-            area.x + area.width/2, area.y + area.height/2, 0,
-            area.x + area.width/2, area.y + area.height/2, area.width/2
-        );
-        gradient.addColorStop(0, 'rgba(255, 255, 0, 0.6)');
-        gradient.addColorStop(0.5, 'rgba(255, 255, 0, 0.3)');
-        gradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
-        this.ctx.fillStyle = gradient;
-        this.ctx.beginPath();
-        this.ctx.arc(area.x + area.width/2, area.y + area.height/2, area.width/2, 0, Math.PI * 2);
-        this.ctx.fill();
-    }
-    
-    drawExitGate(gate) {
-        if (this.currentLevel === 4 && this.gameState === 'gameComplete') {
-            // Draw red gate for final level after Abel is killed
-            this.ctx.fillStyle = '#8B0000'; // Dark Red
-            this.ctx.strokeStyle = '#DC143C'; // Crimson
-            this.ctx.lineWidth = 5;
-            this.ctx.fillRect(gate.x, gate.y, gate.width, gate.height);
-            this.ctx.strokeRect(gate.x, gate.y, gate.width, gate.height);
-            
-            // Draw gate symbol (arch) in a darker red
-            this.ctx.strokeStyle = '#660000';
-            this.ctx.lineWidth = 6;
-            this.ctx.lineCap = 'round';
-            
-            const centerX = gate.x + gate.width / 2;
-            const gateTop = gate.y + 10;
-            const gateBottom = gate.y + gate.height - 10;
-            const archWidth = gate.width - 10;
-            
-            // Draw arch
-            this.ctx.beginPath();
-            this.ctx.arc(centerX, gateTop + archWidth/2, archWidth/2, Math.PI, 0);
-            this.ctx.stroke();
-            
-            // Draw pillars
-            this.ctx.beginPath();
-            this.ctx.moveTo(gate.x + 5, gateTop + archWidth/2);
-            this.ctx.lineTo(gate.x + 5, gateBottom);
-            this.ctx.stroke();
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(gate.x + gate.width - 5, gateTop + archWidth/2);
-            this.ctx.lineTo(gate.x + gate.width - 5, gateBottom);
-            this.ctx.stroke();
-            
-            // Add intense glow
-            this.ctx.shadowColor = '#DC143C';
-            this.ctx.shadowBlur = 20;
-            this.ctx.stroke();
-            this.ctx.shadowBlur = 0;
+
+    drawObject(o) {
+        let fillStyle = o.color || '#555';
+        if (o.type === 'ground') {
+             fillStyle = '#3d3d3d'; 
+             this.ctx.fillStyle = fillStyle; this.ctx.fillRect(o.x, o.y, o.width, o.height);
+             this.ctx.fillStyle = '#2a2a2a'; this.ctx.fillRect(o.x, o.y, o.width, 4);
+        } else if (o.type === 'high') {
+             fillStyle = '#6a6a6a'; 
+             this.ctx.fillStyle = fillStyle; this.ctx.fillRect(o.x, o.y, o.width, o.height);
+             this.ctx.fillStyle = '#888'; this.ctx.fillRect(o.x, o.y, o.width, 2);
+        } else if (o.type === 'bridge') {
+             this.ctx.fillStyle = '#654321'; this.ctx.fillRect(o.x, o.y, o.width, o.height);
+             this.ctx.fillStyle = '#5c3a1e'; for(let i=5; i<o.width; i+=15) this.ctx.fillRect(o.x+i, o.y, 2, o.height);
+        } else if (o.type === 'box') {
+             this.ctx.fillStyle = o.color || '#696969'; this.ctx.fillRect(o.x, o.y, o.width, o.height);
+             this.ctx.strokeStyle = '#444'; this.ctx.strokeRect(o.x+5, o.y+5, o.width-10, o.height-10);
         } else {
-            // Existing gate drawing logic for other levels
-            // Draw gate background
-            this.ctx.fillStyle = '#2F4F4F';
-            this.ctx.fillRect(gate.x, gate.y, gate.width, gate.height);
-            this.ctx.strokeStyle = '#708090';
-            this.ctx.lineWidth = 3;
-            this.ctx.strokeRect(gate.x, gate.y, gate.width, gate.height);
-            
-            // Draw gate symbol (arch)
-            this.ctx.strokeStyle = '#FFD700';
-            this.ctx.lineWidth = 4;
-            this.ctx.lineCap = 'round';
-            
-            const centerX = gate.x + gate.width / 2;
-            const gateTop = gate.y + 10;
-            const gateBottom = gate.y + gate.height - 10;
-            const archWidth = gate.width - 10;
-            
-            // Draw arch
-            this.ctx.beginPath();
-            this.ctx.arc(centerX, gateTop + archWidth/2, archWidth/2, Math.PI, 0);
-            this.ctx.stroke();
-            
-            // Draw pillars
-            this.ctx.beginPath();
-            this.ctx.moveTo(gate.x + 5, gateTop + archWidth/2);
-            this.ctx.lineTo(gate.x + 5, gateBottom);
-            this.ctx.stroke();
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(gate.x + gate.width - 5, gateTop + archWidth/2);
-            this.ctx.lineTo(gate.x + gate.width - 5, gateBottom);
-            this.ctx.stroke();
-            
-            // Add mystical glow
-            this.ctx.shadowColor = '#FFD700';
-            this.ctx.shadowBlur = 15;
-            this.ctx.stroke();
-            this.ctx.shadowBlur = 0;
+             this.ctx.fillStyle = fillStyle; this.ctx.fillRect(o.x, o.y, o.width, o.height);
         }
+        this.ctx.strokeStyle = 'rgba(0,0,0,0.5)'; this.ctx.lineWidth = 1; this.ctx.strokeRect(o.x, o.y, o.width, o.height);
+    }
+
+    drawCollectible(c) {
+        this.ctx.fillStyle = c.color; this.ctx.beginPath();
+        this.ctx.arc(c.x + c.width/2, c.y + c.height/2, 6, 0, Math.PI*2);
+        this.ctx.fill(); this.ctx.shadowColor = c.color; this.ctx.shadowBlur = 10;
+        this.ctx.strokeStyle = '#fff'; this.ctx.stroke(); this.ctx.shadowBlur = 0;
+    }
+
+    drawCharacter(c, name) {
+        this.ctx.fillStyle = c.color; this.ctx.fillRect(c.x, c.y, c.width, c.height);
+        this.ctx.fillStyle = '#fff'; const eyeH = c.y + 10;
+        if (name === 'cain') { this.ctx.fillRect(c.x + 5, eyeH, 5, 5); this.ctx.fillRect(c.x + 20, eyeH, 5, 5); }
+        else { this.ctx.shadowColor = '#87CEEB'; this.ctx.shadowBlur = 15; this.ctx.fillRect(c.x + 5, eyeH, 4, 4); this.ctx.fillRect(c.x + 16, eyeH, 4, 4); this.ctx.shadowBlur = 0; }
     }
     
-    drawCharacter(char, name) {
-        // Add slight glow to characters for visibility
-        this.ctx.shadowColor = char.color;
-        this.ctx.shadowBlur = 8;
+    drawExitGate(g) {
+        this.ctx.fillStyle = '#111'; this.ctx.fillRect(g.x, g.y, g.width, g.height);
+        this.ctx.strokeStyle = '#FFD700'; this.ctx.lineWidth = 3; this.ctx.strokeRect(g.x, g.y, g.width, g.height);
+        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.2)'; this.ctx.fillRect(g.x + 5, g.y + 5, g.width - 10, g.height - 5);
+    }
+    
+    render() {
+        this.ctx.save();
+        if (this.shakeIntensity > 0) {
+            const dx = (Math.random() - 0.5) * this.shakeIntensity;
+            const dy = (Math.random() - 0.5) * this.shakeIntensity;
+            this.ctx.translate(dx, dy);
+        }
+
+        this.ctx.clearRect(0, 0, this.width, this.height);
         
-        this.ctx.fillStyle = char.color;
-        this.ctx.fillRect(char.x, char.y, char.width, char.height);
+        this.drawBackground();
+        this.applyDarkness();
+
+        [...this.platforms, ...this.earthPlatforms, ...this.bridges, ...this.barriers, ...this.gateBarriers, ...this.movableObjects, ...this.switches].forEach(o => {
+            if (o.visible !== false) this.drawObject(o);
+        });
+
+        [...this.collectibles, ...this.hiddenCollectibles].forEach(c => {
+             if (!c.collected && (c.visible !== false || c.revealed)) this.drawCollectible(c);
+        });
+
+        if (this.exitGate) this.drawExitGate(this.exitGate);
+
+        this.particles.forEach(p => p.draw(this.ctx));
+
+        Object.entries(this.characters).forEach(([name, char]) => this.drawCharacter(char, name));
         
-        this.ctx.shadowBlur = 0;
-        
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(char.x, char.y, char.width, char.height);
-        
-        // Draw character name with better visibility
-        this.ctx.fillStyle = '#FFFFFF';
-        this.ctx.font = '12px Arial';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeText(name.charAt(0).toUpperCase() + name.slice(1), char.x, char.y - 5);
-        this.ctx.fillText(name.charAt(0).toUpperCase() + name.slice(1), char.x, char.y - 5);
+        const active = this.characters[this.currentCharacter];
+        if (active) {
+            this.ctx.strokeStyle = '#FFD700';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(active.x - 2, active.y - 2, active.width + 4, active.height + 4);
+        }
+
+        this.ctx.restore();
     }
     
     gameLoop() {
-        this.update();
-        this.render();
-        requestAnimationFrame(() => this.gameLoop());
+        try {
+            this.update();
+            this.render();
+            requestAnimationFrame(() => this.gameLoop());
+        } catch (e) {
+            console.error("Game Loop Error:", e);
+        }
     }
 }
 
-// Initialize game when page loads
 window.addEventListener('load', () => {
-    const startButton = document.getElementById('startButton');
-    const gameCanvas = document.getElementById('gameCanvas');
-
-    // Hide game canvas initially
-    gameCanvas.classList.add('hidden');
-
-    startButton.addEventListener('click', () => {
-        // Hide start button and show game canvas
-        startButton.parentElement.classList.add('hidden');
-        gameCanvas.classList.remove('hidden');
-        new Game();
-    });
+    try {
+        const btn = document.getElementById('startButton');
+        btn.addEventListener('click', () => {
+            document.getElementById('startButtonContainer').classList.add('hidden');
+            new Game();
+        });
+    } catch(e) {
+        console.error("Initialization Error:", e);
+    }
 });

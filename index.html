@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cain and Abel - A Journey of Unity</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,40 +16,70 @@
             <p>A Journey of Unity</p>
         </div>
 
-        <div id="startButtonContainer">
-            <button id="startButton">Start Game</button>
-        </div>
-        
-        <div id="gameCanvas">
+        <div id="canvasWrapper">
+            <div id="startButtonContainer">
+                <button id="startButton">Begin Journey</button>
+            </div>
+            
+            <div id="gameMessage" class="hidden">
+                <div id="messageContent"></div>
+            </div>
+
+            <div id="gameHUD" class="hidden">
+                <div class="hud-section left">
+                    <div class="hud-card" id="characterCard">
+                        <span class="hud-label">Current Soul</span>
+                        <span id="currentCharacter" class="hud-value">Cain</span>
+                    </div>
+                </div>
+                
+                <div class="hud-section center">
+                    <div class="hud-card mini" id="levelCard">
+                        <span class="hud-label">Chapter</span>
+                        <span id="levelProgress" class="hud-value">1</span>
+                    </div>
+                </div>
+
+                <div class="hud-section right">
+                    <div class="hud-card" id="offeringsCard">
+                        <span class="hud-label">Offerings</span>
+                        <div id="offeringsList">
+                            <span id="cainOfferings" class="offering-badge cain">Cain: 0/3</span>
+                            <span id="abelOfferings" class="offering-badge abel">Abel: 0/3</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <canvas id="game" width="1200" height="600"></canvas>
         </div>
         
         <div id="gameUI">
             <div id="instructions">
-                <h3>Controls:</h3>
-                <div class="control-group">
-                    <h4>Cain (Earth-Bound):</h4>
-                    <p>WASD - Move | SPACE - Jump | E - Push/Pull | R - Create Platform | T - Break Barrier</p>
-                </div>
-                <div class="control-group">
-                    <h4>Abel (Sky-Tender):</h4>
-                    <p>J/L - Move | SHIFT - Jump/Double Jump | F - Illuminate</p>
-                </div>
-                <div class="control-group">
-                    <h4>Game:</h4>
-                    <p>1/2 - Switch Character | P - Pause | R - Restart Level</p>
+                <h3>Controls</h3>
+                <div class="controls-grid">
+                    <div class="control-column earth">
+                        <h4>Cain (Earth-Bound)</h4>
+                        <p><span class="key">WASD</span> Move</p>
+                        <p><span class="key">SPACE</span> Jump</p>
+                        <p><span class="key">E</span> Push/Pull</p>
+                        <p><span class="key">R</span> Create Platform</p>
+                        <p><span class="key">T</span> Break Barrier</p>
+                    </div>
+                    <div class="control-column sky">
+                        <h4>Abel (Sky-Tender)</h4>
+                        <p><span class="key">J/L</span> Move</p>
+                        <p><span class="key">SHIFT</span> Dbl Jump</p>
+                        <p><span class="key">F</span> Illuminate</p>
+                    </div>
+                    <div class="control-column system">
+                        <h4>System</h4>
+                        <p><span class="key">1</span> / <span class="key">2</span> Switch Soul</p>
+                        <p><span class="key">P</span> Pause</p>
+                        <p><span class="key">R</span> Restart Level</p>
+                    </div>
                 </div>
             </div>
-            
-            <div id="gameStatus">
-                <div id="currentCharacter">Current: Cain</div>
-                <div id="levelProgress">Level: 1</div>
-                <div id="offerings">Offerings: 0/3</div>
-            </div>
-        </div>
-        
-        <div id="gameMessage" class="hidden">
-            <div id="messageContent"></div>
         </div>
     </div>
     
